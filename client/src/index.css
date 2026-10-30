@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    direction: rtl;
+    text-align: right;
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #F6F3EB;
+    color: #252922;
+    overflow-x: hidden;
+  }
+
+  /* Custom subtle cinema scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #F6F3EB;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #D5CEC3;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #73776F;
+  }
+}
+
+/* Latin typography helper */
+.font-latin {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  direction: ltr;
+  display: inline-block;
+}
