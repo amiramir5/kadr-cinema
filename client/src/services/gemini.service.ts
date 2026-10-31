@@ -1,11 +1,13 @@
 import { StructuredInterpretation } from '../types';
 
 export class GeminiClientService {
+  // Ordered by active availability & quota on this key
   private static readonly MODELS = [
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite',
+    'gemini-3-flash-preview',
     'gemini-3.8-flash',
-    'gemini-2.0-flash-exp'
+    'gemini-flash-latest'
   ];
 
   public static getApiKey(): string {
@@ -37,16 +39,18 @@ Parse the user's Persian prompt into a JSON object with this exact structure:
   "runtimeMax": number | null (maximum runtime in minutes if requested, e.g. 45 or 120),
   "minimumRating": number | null (e.g. 8.0),
   "narrativePreferences": string[] (e.g. ["پایان غیرقابل پیش‌بینی", "داستان معمایی"]),
-  "unwantedContent": string[] (e.g. ["بدون عاشقانه", "بدون جامپ‌اسکر"]),
-  "referenceTitles": string[] (any titles mentioned, in English or Persian),
+  "unwantedContent": string[] (e.g. ["بدون عاشقانه", "بدون جامپ‌اسکر", "به جز اتک", "Attack on Titan", "حمله به تایتان"]),
+  "referenceTitles": string[] (any positive reference titles mentioned, in English or Persian),
   "persianSummary": string (one natural Persian sentence describing the user's request)
 }
+IMPORTANT:
+- If user says "به جز X" or "بدون X" or "not X", put X and its known translations in unwantedContent!
 Return ONLY valid JSON. No markdown ticks, no preamble.`;
 
     for (const model of this.MODELS) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 7000);
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const response = await fetch(url, {
@@ -74,6 +78,7 @@ Return ONLY valid JSON. No markdown ticks, no preamble.`;
         clearTimeout(timeoutId);
 
         if (!response.ok) {
+          console.warn(`[GeminiClientService] ${model} returned status ${response.status}`);
           continue;
         }
 
@@ -96,11 +101,10 @@ Return ONLY valid JSON. No markdown ticks, no preamble.`;
           unwantedContent: Array.isArray(parsed.unwantedContent) ? parsed.unwantedContent : [],
           referenceTitles: Array.isArray(parsed.referenceTitles) ? parsed.referenceTitles : [],
           persianSummary: parsed.persianSummary || prompt,
-          confidence: 0.96,
+          confidence: 0.98,
           isAiPowered: true,
         };
       } catch (err: any) {
-        // Try next model or fail gracefully
         console.warn(`[GeminiClientService] ${model} attempt failed:`, err?.message || err);
       }
     }

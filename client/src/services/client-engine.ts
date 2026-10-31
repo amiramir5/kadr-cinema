@@ -66,16 +66,50 @@ export class ClientEngine {
       } catch {}
     }
 
+    // Negation detection from prompt (e.g. "به جز اتک", "بدون ترسناک", "به غیر از بریکینگ بد")
+    const unwantedKeywords: string[] = [...(interp.unwantedContent || [])];
+    const excludeMatches = rawLower.match(/(?:به جز|به‌جز|به غیر از|بدون|به غیراز)\s+([^\s,،]+)/g);
+    if (excludeMatches) {
+      excludeMatches.forEach(m => {
+        const cleaned = m.replace(/(?:به جز|به‌جز|به غیر از|بدون|به غیراز)\s+/g, '').trim();
+        if (cleaned) unwantedKeywords.push(cleaned);
+      });
+    }
+
     // HARD FILTERING:
+    // Exclude unwanted titles or keywords
+    if (unwantedKeywords.length > 0) {
+      candidatePool = candidatePool.filter(m => {
+        const titleCombined = `${m.title} ${m.originalTitle} ${m.titleFa || ''} ${m.genres.join(' ')}`.toLowerCase();
+        for (const bad of unwantedKeywords) {
+          const b = bad.toLowerCase().trim();
+          if (!b) continue;
+          if (b.includes('اتک') || b.includes('attack') || b.includes('تایتان')) {
+            if (titleCombined.includes('attack') || titleCombined.includes('titan') || titleCombined.includes('تایتان') || titleCombined.includes('اتک')) {
+              return false;
+            }
+          }
+          if (b.includes('بریکینگ') || b.includes('breaking')) {
+            if (titleCombined.includes('breaking') || titleCombined.includes('بریکینگ')) {
+              return false;
+            }
+          }
+          if (titleCombined.includes(b)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
     // If user explicitly asked for ANIME, strictly exclude non-anime!
     if (isAnimeRequested) {
       candidatePool = candidatePool.filter(m => m.genreIds.includes(16) || m.genres.some(g => g.includes('انیمه') || g.includes('انیمیشن')));
     }
 
-    // If user asked for COMEDY/FUN, strictly down-rank or exclude heavy dark dramas (like Chernobyl, Breaking Bad)
+    // If user asked for COMEDY/FUN, strictly down-rank or exclude heavy dark dramas
     if (isComedyRequested && !isDarkRequested) {
       candidatePool = candidatePool.filter(m => {
-        // Exclude pure crime/thriller without comedy
         if (m.genreIds.includes(80) && !m.genreIds.includes(35)) return false;
         return true;
       });
