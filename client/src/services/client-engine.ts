@@ -1,5 +1,7 @@
-import { RecommendationResponse, ScoredRecommendation, MediaItem, MediaDetail, Genre } from '../types';
+import { RecommendationResponse, MediaItem, MediaDetail, Genre, StructuredInterpretation } from '../types';
 import { PersianNlpService } from './persian-nlp.service';
+import { GeminiClientService } from './gemini.service';
+import { ClientOmdbService } from './omdb.service';
 import { CURATED_TITLES, GENRE_MAP } from './curated-cache';
 import { ClientTvMazeService } from './tvmaze.service';
 
@@ -11,8 +13,16 @@ export class ClientEngine {
     minRating?: number;
     maxRuntime?: number;
   }): Promise<RecommendationResponse> {
-    const interp = PersianNlpService.parsePrompt(params.prompt);
+    // 1. Try Gemini LLM first, fallback to deterministic Persian NLP
+    let interp: StructuredInterpretation | null = await GeminiClientService.interpretPrompt(params.prompt);
+    let engineUsed: 'llm-hybrid' | 'persian-nlp-deterministic' = 'llm-hybrid';
 
+    if (!interp) {
+      interp = PersianNlpService.parsePrompt(params.prompt);
+      engineUsed = 'persian-nlp-deterministic';
+    }
+
+    // Apply explicit filters if provided
     if (params.mediaType && params.mediaType !== 'all') {
       interp.mediaType = params.mediaType as any;
     }
@@ -29,17 +39,36 @@ export class ClientEngine {
     const candidatePool: MediaItem[] = [...CURATED_TITLES];
 
     // Query live TVmaze for matching series
-    if (interp.referenceTitles.length > 0 || interp.genres.length > 0) {
-      try {
-        const query = interp.referenceTitles[0] || interp.genres[0];
-        const tvResults = await ClientTvMazeService.search(query);
-        for (const show of tvResults) {
-          if (!candidatePool.some(c => c.id === show.id)) {
-            candidatePool.push(show);
+    if (interp.mediaType !== 'movie') {
+      const tvQuery = interp.referenceTitles[0] || interp.genres[0];
+      if (tvQuery) {
+        try {
+          const tvResults = await ClientTvMazeService.search(tvQuery);
+          for (const show of tvResults) {
+            if (!candidatePool.some(c => c.id === show.id)) {
+              candidatePool.push(show);
+            }
           }
+        } catch {
+          // Fallback silently to curated pool
         }
-      } catch (e) {
-        // Fallback silently to curated pool
+      }
+    }
+
+    // Query live OMDb for matching movies
+    if (interp.mediaType !== 'tv') {
+      const movieQuery = interp.referenceTitles[0] || (interp.genres[0] ? interp.genres[0] : null);
+      if (movieQuery) {
+        try {
+          const movieResults = await ClientOmdbService.search(movieQuery);
+          for (const movie of movieResults) {
+            if (!candidatePool.some(c => c.id === movie.id || c.title.toLowerCase() === movie.title.toLowerCase())) {
+              candidatePool.push(movie);
+            }
+          }
+        } catch {
+          // Fallback silently
+        }
       }
     }
 
@@ -49,13 +78,13 @@ export class ClientEngine {
       const matchedMoods: string[] = [];
       const matchedNarrative: string[] = [];
 
-      if (interp.mediaType !== 'all') {
-        if (media.mediaType === interp.mediaType) score += 20;
+      if (interp!.mediaType !== 'all') {
+        if (media.mediaType === interp!.mediaType) score += 20;
         else score -= 40;
       }
 
-      if (interp.genreIds.length > 0) {
-        const overlap = media.genreIds.filter(gid => interp.genreIds.includes(gid));
+      if (interp!.genreIds.length > 0) {
+        const overlap = media.genreIds.filter(gid => interp!.genreIds.includes(gid));
         if (overlap.length > 0) {
           score += overlap.length * 15;
           for (const gid of overlap) {
@@ -65,10 +94,18 @@ export class ClientEngine {
         } else {
           score -= 15;
         }
+      } else if (interp!.genres.length > 0) {
+        // Match string genre names
+        for (const g of interp!.genres) {
+          if (media.genres.some(mg => mg.includes(g) || g.includes(mg))) {
+            score += 15;
+            matchedGenres.push(g);
+          }
+        }
       }
 
       const textToAnalyze = `${media.title} ${media.overview} ${media.overviewFa || ''}`.toLowerCase();
-      for (const mood of interp.mood) {
+      for (const mood of interp!.mood) {
         if (mood.includes('تاریک') && (textToAnalyze.includes('kill') || textToAnalyze.includes('crime') || media.genreIds.includes(80))) {
           score += 15;
           matchedMoods.push('تاریک و عمیق');
@@ -87,26 +124,26 @@ export class ClientEngine {
         }
       }
 
-      if (interp.runtimeMax && media.runtime) {
-        if (media.runtime <= interp.runtimeMax) score += 12;
-        else if (media.runtime > interp.runtimeMax + 20) score -= 25;
+      if (interp!.runtimeMax && media.runtime) {
+        if (media.runtime <= interp!.runtimeMax) score += 12;
+        else if (media.runtime > interp!.runtimeMax + 20) score -= 25;
       }
 
-      if (interp.minimumRating) {
-        if (media.voteAverage >= interp.minimumRating) score += 12;
-        else if (media.voteAverage < interp.minimumRating - 0.5) score -= 20;
+      if (interp!.minimumRating) {
+        if (media.voteAverage >= interp!.minimumRating) score += 12;
+        else if (media.voteAverage < interp!.minimumRating - 0.5) score -= 20;
       }
 
       score += (media.voteAverage / 10) * 15;
 
-      for (const ref of interp.referenceTitles) {
+      for (const ref of interp!.referenceTitles) {
         if (media.title.toLowerCase().includes(ref.toLowerCase()) || media.originalTitle.toLowerCase().includes(ref.toLowerCase())) {
           score += 30;
           matchedNarrative.push(`الهام‌گرفته از ${ref}`);
         }
       }
 
-      for (const unwanted of interp.unwantedContent) {
+      for (const unwanted of interp!.unwantedContent) {
         if (unwanted.includes('عاشقانه') && media.genreIds.includes(10749)) score -= 30;
         if (unwanted.includes('جامپ‌اسکر') && media.genreIds.includes(27) && !media.genres.includes('معمایی')) score -= 15;
       }
@@ -132,7 +169,7 @@ export class ClientEngine {
       interpretation: interp,
       results: scored.slice(0, 15),
       totalFound: scored.length,
-      engineUsed: 'persian-nlp-deterministic',
+      engineUsed,
       tmdbLive: false,
     };
   }
@@ -150,18 +187,33 @@ export class ClientEngine {
       (item.director && item.director.toLowerCase().includes(q))
     );
 
+    const combined: MediaItem[] = [...curated];
+
+    // Search TVmaze
     try {
       const tvmazeResults = await ClientTvMazeService.search(query);
-      const combined: MediaItem[] = [...curated];
       for (const show of tvmazeResults) {
         if (!combined.some(c => c.id === show.id)) {
           combined.push(show);
         }
       }
-      return { results: combined, total: combined.length };
     } catch {
-      return { results: curated, total: curated.length };
+      // Ignore
     }
+
+    // Search OMDb
+    try {
+      const omdbResults = await ClientOmdbService.search(query);
+      for (const movie of omdbResults) {
+        if (!combined.some(c => c.id === movie.id || c.title.toLowerCase() === movie.title.toLowerCase())) {
+          combined.push(movie);
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    return { results: combined, total: combined.length };
   }
 
   public static async explore(filters: {
@@ -198,6 +250,15 @@ export class ClientEngine {
     const cached = CURATED_TITLES.find(c => c.id === id);
     if (cached) return cached;
 
+    // Try OMDb first (for movie IDs)
+    try {
+      const omdbDetail = await ClientOmdbService.getMovie(id);
+      if (omdbDetail) return omdbDetail;
+    } catch {
+      // Ignore
+    }
+
+    // Try TVmaze for TV shows
     try {
       return await ClientTvMazeService.getShow(id);
     } catch {

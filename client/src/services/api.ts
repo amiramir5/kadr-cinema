@@ -156,8 +156,13 @@ export const KadrApi = {
  */
 export function getPosterUrl(path: string | null, size: 'w342' | 'w500' | 'original' = 'w500'): string {
   if (!path) return './placeholder-poster.svg';
-  if (path.startsWith('http')) return path;
-  return `https://image.tmdb.org/t/p/${size}${path}`;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path.replace(/^http:\/\//i, 'https://');
+  }
+  if (path.startsWith('/')) {
+    return `https://image.tmdb.org/t/p/${size}${path}`;
+  }
+  return path;
 }
 
 /**
@@ -165,6 +170,11 @@ export function getPosterUrl(path: string | null, size: 'w342' | 'w500' | 'origi
  */
 export function getBackdropUrl(path: string | null, size: 'w780' | 'w1280' | 'original' = 'w1280'): string {
   if (!path) return '';
-  if (path.startsWith('http')) return path;
-  return `https://image.tmdb.org/t/p/${size}${path}`;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return path.replace(/^http:\/\//i, 'https://');
+  }
+  if (path.startsWith('/')) {
+    return `https://image.tmdb.org/t/p/${size}${path}`;
+  }
+  return path;
 }
