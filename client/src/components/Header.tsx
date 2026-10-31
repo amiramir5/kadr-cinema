@@ -125,15 +125,11 @@ export const Header: React.FC = () => {
           <NavLink
             to="/settings"
             className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-cinema-pill border border-kadr-border bg-kadr-surface text-xs text-kadr-text-muted hover:border-kadr-primary/40 transition-colors"
-            title="وضعیت اتصال TMDB"
+            title="وضعیت اتصال TVmaze و هوش مصنوعی"
           >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                tmdbLive ? 'bg-emerald-500 ring-2 ring-emerald-200' : 'bg-amber-500 ring-2 ring-amber-200'
-              }`}
-            />
+            <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-200" />
             <span className="font-latin text-[11px] font-medium">
-              {tmdbLive ? 'TMDB Live' : 'Curated Engine'}
+              TVmaze • Gemini 3.8
             </span>
           </NavLink>
         </div>

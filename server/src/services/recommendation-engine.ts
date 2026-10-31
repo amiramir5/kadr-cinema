@@ -1,16 +1,30 @@
 import { RecommendationRequest, RecommendationResponse, ScoredRecommendation, MediaItem, StructuredInterpretation } from '../types';
 import { PersianNlpService } from './persian-nlp.service';
 import { TmdbService } from './tmdb.service';
+import { TvMazeService } from './tvmaze.service';
+import { GeminiService } from './gemini.service';
 import { CURATED_TITLES } from './curated-cache';
-import { isTmdbConfigured } from '../config';
+import { isTmdbConfigured, isGeminiConfigured } from '../config';
 
 export class RecommendationEngine {
   /**
    * Main recommendation pipeline
    */
   public static async recommend(req: RecommendationRequest): Promise<RecommendationResponse> {
-    // Stage 1: Interpret natural language request
-    const interpretation = PersianNlpService.parsePrompt(req.prompt);
+    // Stage 1: Try Gemini 3.8 Flash first, fallback to deterministic Persian NLP
+    let interpretation: StructuredInterpretation | null = null;
+    let engineUsed: 'llm-hybrid' | 'persian-nlp-deterministic' = 'persian-nlp-deterministic';
+
+    if (isGeminiConfigured()) {
+      interpretation = await GeminiService.interpretPrompt(req.prompt);
+      if (interpretation) {
+        engineUsed = 'llm-hybrid';
+      }
+    }
+
+    if (!interpretation) {
+      interpretation = PersianNlpService.parsePrompt(req.prompt);
+    }
 
     // Apply any explicit query overrides from UI controls
     if (req.mediaType && req.mediaType !== 'all') {
@@ -42,7 +56,7 @@ export class RecommendationEngine {
       interpretation,
       results: finalResults,
       totalFound: scoredList.length,
-      engineUsed: 'persian-nlp-deterministic',
+      engineUsed,
       tmdbLive: isTmdbConfigured(),
     };
   }
@@ -75,6 +89,24 @@ export class RecommendationEngine {
     // 1. Always include relevant curated items
     for (const title of CURATED_TITLES) {
       candidateMap.set(title.id, title);
+    }
+
+    // 2. Query TVmaze for reference titles or query keywords
+    try {
+      const tvmazeQueries = [...interp.referenceTitles];
+      if (interp.genres.length > 0) {
+        tvmazeQueries.push(interp.genres[0]);
+      }
+      for (const q of tvmazeQueries.slice(0, 3)) {
+        const tvShows = await TvMazeService.search(q);
+        for (const show of tvShows) {
+          if (!candidateMap.has(show.id)) {
+            candidateMap.set(show.id, show);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[retrieveCandidates] TVmaze query error:', err?.message);
     }
 
     // 2. If TMDB is live, fetch discovery streams

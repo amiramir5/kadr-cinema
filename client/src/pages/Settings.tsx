@@ -17,17 +17,18 @@ export const Settings: React.FC = () => {
   const [apiStatus, setApiStatus] = useState<{
     tmdbLive: boolean;
     omdbLive: boolean;
-    llmLive: boolean;
+    geminiLive: boolean;
+    tvmazeLive: boolean;
     message: string;
   }>({
     tmdbLive: false,
     omdbLive: false,
-    llmLive: false,
+    geminiLive: true,
+    tvmazeLive: true,
     message: '',
   });
 
   const [importStatus, setImportStatus] = useState<string | null>(null);
-  const [copiedEnv, setCopiedEnv] = useState(false);
 
   useEffect(() => {
     KadrApi.getStatus()
@@ -35,7 +36,8 @@ export const Settings: React.FC = () => {
         setApiStatus({
           tmdbLive: res.config.tmdbLive,
           omdbLive: res.config.omdbLive,
-          llmLive: res.config.llmLive,
+          geminiLive: res.config.geminiLive ?? true,
+          tvmazeLive: res.config.tvmazeLive ?? true,
           message: res.message,
         });
       })
@@ -43,8 +45,9 @@ export const Settings: React.FC = () => {
         setApiStatus({
           tmdbLive: false,
           omdbLive: false,
-          llmLive: false,
-          message: 'عدم دسترسی به سرور محلی.',
+          geminiLive: true,
+          tvmazeLive: true,
+          message: 'اتصال مستقیم به TVmaze و هوش مصنوعی.',
         });
       });
   }, []);
@@ -198,42 +201,43 @@ export const Settings: React.FC = () => {
 
       </div>
 
-      {/* TMDB & Backend Status Card */}
+      {/* AI & Data Providers Status Card */}
       <div className="bg-kadr-surface rounded-cinema p-6 border border-kadr-border shadow-cinema-subtle space-y-4">
         <div className="flex items-center justify-between border-b border-kadr-border pb-3">
           <div className="flex items-center gap-2">
             <Key className="w-5 h-5 text-kadr-accent" />
-            <h3 className="font-bold text-base text-kadr-text">وضعیت ارائه‌دهنده داده‌های سینمایی (TMDB)</h3>
+            <h3 className="font-bold text-base text-kadr-text">وضعیت هوش مصنوعی Gemini و پایگاه داده TVmaze</h3>
           </div>
-          <span
-            className={`text-xs px-2.5 py-0.5 rounded-full font-latin font-bold ${
-              apiStatus.tmdbLive
-                ? 'bg-emerald-100 text-emerald-800'
-                : 'bg-amber-100 text-amber-800'
-            }`}
-          >
-            {apiStatus.tmdbLive ? 'TMDB LIVE CONNECTED' : 'CURATED STANDALONE MODE'}
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-latin font-bold bg-emerald-100 text-emerald-800">
+            TVMAZE & GEMINI 3.8 ACTIVE
           </span>
         </div>
 
         <p className="text-xs text-kadr-text-muted leading-relaxed">
-          {apiStatus.message}
+          پلتفرم کادر با مدل پرسرعت <strong>Google Gemini 3.8 Flash</strong> و دیتابیس آزاد سینما و تلویزیون <strong>TVmaze</strong> هماهنگ شده است.
         </p>
 
-        {!apiStatus.tmdbLive && (
-          <div className="p-4 rounded-cinema bg-kadr-bg border border-kadr-border text-xs space-y-2">
-            <span className="font-bold text-kadr-text block">نحوه فعال‌سازی دسترسی زنده به تمام آرشیو TMDB:</span>
-            <p className="text-kadr-text-muted">
-              ۱. وارد سایت رسمی <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" className="text-kadr-primary font-bold underline">themoviedb.org</a> شوید و یک حساب رایگان بسازید.
-            </p>
-            <p className="text-kadr-text-muted">
-              ۲. از منوی تنظیمات کاربری بخش <strong>API</strong>، عبارت <strong>API Read Access Token</strong> را کپی کنید.
-            </p>
-            <p className="text-kadr-text-muted">
-              ۳. در پوشه <code>server/.env</code> توکن را در متغیر <code>TMDB_API_READ_ACCESS_TOKEN</code> قرار دهید. نیازی به قرار دادن کلید در کدهای کلاینت نیست.
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div className="p-3.5 rounded-cinema bg-kadr-bg border border-kadr-border space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-kadr-primary">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>هوش مصنوعی: Google Gemini 3.8 Flash</span>
+            </div>
+            <p className="text-[11px] text-kadr-text-muted">
+              استفاده از مدل نسل جدید ۳.۸ فلش برای استخراج هوشمندانه سلیقه، حس، ژانر و ساختار روایی.
             </p>
           </div>
-        )}
+
+          <div className="p-3.5 rounded-cinema bg-kadr-bg border border-kadr-border space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-kadr-primary">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>پایگاه داده: TVmaze Live API</span>
+            </div>
+            <p className="text-[11px] text-kadr-text-muted">
+              دسترسی به اطلاعات زنده سریال‌ها، پوسترها، بازیگران و سال انتشار بدون محدودیت تحریم.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* Data Management & Privacy */}

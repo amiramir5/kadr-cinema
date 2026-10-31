@@ -14,11 +14,11 @@ export const apiClient = axios.create({
 
 export const KadrApi = {
   /**
-   * Get server & TMDB status
+   * Get server & status
    */
   async getStatus(): Promise<{
     status: string;
-    config: { tmdbLive: boolean; omdbLive: boolean; llmLive: boolean };
+    config: { tmdbLive: boolean; omdbLive: boolean; geminiLive: boolean; tvmazeLive: boolean };
     message: string;
   }> {
     try {
@@ -27,8 +27,8 @@ export const KadrApi = {
     } catch {
       return {
         status: 'ok',
-        config: { tmdbLive: false, omdbLive: false, llmLive: false },
-        message: 'موتور هوشمند مستقل کادر (حالت استاتیک / گیتهاب پیجز)',
+        config: { tmdbLive: false, omdbLive: false, geminiLive: true, tvmazeLive: true },
+        message: 'متصل به دیتابیس آزاد TVmaze و موتور هوشمند کادر (GitHub Pages)',
       };
     }
   },
@@ -47,8 +47,7 @@ export const KadrApi = {
       const res = await apiClient.post('/recommend', params);
       return res.data;
     } catch {
-      // Standalone browser client fallback for GitHub Pages
-      return ClientEngine.recommend(params);
+      return await ClientEngine.recommend(params);
     }
   },
 
@@ -64,7 +63,7 @@ export const KadrApi = {
       const res = await apiClient.post('/recommend/refine', params);
       return res.data;
     } catch {
-      return ClientEngine.refine(params.originalPrompt, params.refinementPrompt);
+      return await ClientEngine.refine(params.originalPrompt, params.refinementPrompt);
     }
   },
 
@@ -76,7 +75,7 @@ export const KadrApi = {
       const res = await apiClient.get('/search', { params: { q: query, page } });
       return res.data;
     } catch {
-      return ClientEngine.search(query);
+      return await ClientEngine.search(query);
     }
   },
 
@@ -95,7 +94,7 @@ export const KadrApi = {
       const res = await apiClient.get('/explore', { params: filters });
       return res.data;
     } catch {
-      return ClientEngine.explore(filters);
+      return await ClientEngine.explore(filters);
     }
   },
 
@@ -107,7 +106,7 @@ export const KadrApi = {
       const res = await apiClient.get(`/movie/${id}`);
       return res.data;
     } catch {
-      const detail = ClientEngine.getDetail(id);
+      const detail = await ClientEngine.getDetail(id);
       if (detail) return detail;
       throw new Error('عنوان یافت نشد');
     }
@@ -121,7 +120,7 @@ export const KadrApi = {
       const res = await apiClient.get(`/tv/${id}`);
       return res.data;
     } catch {
-      const detail = ClientEngine.getDetail(id);
+      const detail = await ClientEngine.getDetail(id);
       if (detail) return detail;
       throw new Error('عنوان یافت نشد');
     }

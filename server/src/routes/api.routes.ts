@@ -2,7 +2,8 @@ import { Router, Request, Response } from 'express';
 import { RecommendationEngine } from '../services/recommendation-engine';
 import { TmdbService } from '../services/tmdb.service';
 import { OmdbService } from '../services/omdb.service';
-import { isTmdbConfigured, isOmdbConfigured, isLlmConfigured } from '../config';
+import { TvMazeService } from '../services/tvmaze.service';
+import { isTmdbConfigured, isOmdbConfigured, isGeminiConfigured } from '../config';
 import { GENRE_MAP, CURATED_TITLES } from '../services/curated-cache';
 
 const router = Router();
@@ -17,11 +18,13 @@ router.get('/status', (req: Request, res: Response) => {
     config: {
       tmdbLive: isTmdbConfigured(),
       omdbLive: isOmdbConfigured(),
-      llmLive: isLlmConfigured(),
+      geminiLive: isGeminiConfigured(),
+      geminiModel: 'gemini-3.8-flash',
+      tvmazeLive: true,
     },
-    message: isTmdbConfigured()
-      ? 'اتصال زنده به TMDB برقرار است.'
-      : 'در حالت پیش‌فرض هوشمند (مجموعه منتخب سینمایی). برای فعال‌سازی نامحدود TMDB، توکن را در فایل .env قرار دهید.',
+    message: isGeminiConfigured()
+      ? 'هوش مصنوعی Gemini 3.8 Flash فعال است. اتصال زنده به دیتابیس TVmaze برقرار است.'
+      : 'در حالت هوشمند پیش‌فرض. اتصال زنده به دیتابیس TVmaze برقرار است.',
   });
 });
 
@@ -153,7 +156,11 @@ router.get('/movie/:id', async (req: Request, res: Response) => {
 router.get('/tv/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id, 10);
-    const details = await TmdbService.getDetails('tv', id);
+    let details = await TmdbService.getDetails('tv', id);
+
+    if (!details) {
+      details = await TvMazeService.getShow(id);
+    }
 
     if (!details) {
       return res.status(404).json({ error: 'عنوان یافت نشد.' });

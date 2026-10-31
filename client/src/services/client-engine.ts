@@ -1,15 +1,16 @@
 import { RecommendationResponse, ScoredRecommendation, MediaItem, MediaDetail, Genre } from '../types';
 import { PersianNlpService } from './persian-nlp.service';
 import { CURATED_TITLES, GENRE_MAP } from './curated-cache';
+import { ClientTvMazeService } from './tvmaze.service';
 
 export class ClientEngine {
-  public static recommend(params: {
+  public static async recommend(params: {
     prompt: string;
     mediaType?: string;
     genreId?: number;
     minRating?: number;
     maxRuntime?: number;
-  }): RecommendationResponse {
+  }): Promise<RecommendationResponse> {
     const interp = PersianNlpService.parsePrompt(params.prompt);
 
     if (params.mediaType && params.mediaType !== 'all') {
@@ -25,7 +26,24 @@ export class ClientEngine {
       interp.runtimeMax = params.maxRuntime;
     }
 
-    const scored = CURATED_TITLES.map(media => {
+    const candidatePool: MediaItem[] = [...CURATED_TITLES];
+
+    // Query live TVmaze for matching series
+    if (interp.referenceTitles.length > 0 || interp.genres.length > 0) {
+      try {
+        const query = interp.referenceTitles[0] || interp.genres[0];
+        const tvResults = await ClientTvMazeService.search(query);
+        for (const show of tvResults) {
+          if (!candidatePool.some(c => c.id === show.id)) {
+            candidatePool.push(show);
+          }
+        }
+      } catch (e) {
+        // Fallback silently to curated pool
+      }
+    }
+
+    const scored = candidatePool.map(media => {
       let score = 50;
       const matchedGenres: string[] = [];
       const matchedMoods: string[] = [];
@@ -112,34 +130,46 @@ export class ClientEngine {
 
     return {
       interpretation: interp,
-      results: scored.slice(0, 12),
+      results: scored.slice(0, 15),
       totalFound: scored.length,
       engineUsed: 'persian-nlp-deterministic',
       tmdbLive: false,
     };
   }
 
-  public static refine(originalPrompt: string, refinementPrompt: string): RecommendationResponse {
+  public static async refine(originalPrompt: string, refinementPrompt: string): Promise<RecommendationResponse> {
     return this.recommend({ prompt: `${originalPrompt} (${refinementPrompt})` });
   }
 
-  public static search(query: string): { results: MediaItem[]; total: number } {
+  public static async search(query: string): Promise<{ results: MediaItem[]; total: number }> {
     const q = query.toLowerCase().trim();
-    const items = CURATED_TITLES.filter(item =>
+    const curated: MediaItem[] = CURATED_TITLES.filter(item =>
       item.title.toLowerCase().includes(q) ||
       item.originalTitle.toLowerCase().includes(q) ||
       (item.titleFa && item.titleFa.toLowerCase().includes(q)) ||
       (item.director && item.director.toLowerCase().includes(q))
     );
-    return { results: items, total: items.length };
+
+    try {
+      const tvmazeResults = await ClientTvMazeService.search(query);
+      const combined: MediaItem[] = [...curated];
+      for (const show of tvmazeResults) {
+        if (!combined.some(c => c.id === show.id)) {
+          combined.push(show);
+        }
+      }
+      return { results: combined, total: combined.length };
+    } catch {
+      return { results: curated, total: curated.length };
+    }
   }
 
-  public static explore(filters: {
+  public static async explore(filters: {
     type?: string;
     genre?: string | number;
     minRating?: number;
     sortBy?: string;
-  }): { results: MediaItem[]; total: number } {
+  }): Promise<{ results: MediaItem[]; total: number }> {
     let list = [...CURATED_TITLES];
 
     if (filters.type && filters.type !== 'all') {
@@ -164,8 +194,15 @@ export class ClientEngine {
     return { results: list, total: list.length };
   }
 
-  public static getDetail(id: number): MediaDetail | null {
-    return CURATED_TITLES.find(c => c.id === id) || null;
+  public static async getDetail(id: number): Promise<MediaDetail | null> {
+    const cached = CURATED_TITLES.find(c => c.id === id);
+    if (cached) return cached;
+
+    try {
+      return await ClientTvMazeService.getShow(id);
+    } catch {
+      return null;
+    }
   }
 
   public static getTrending(): { results: MediaItem[] } {
