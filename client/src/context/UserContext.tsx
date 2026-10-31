@@ -56,50 +56,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('Failed to parse saved items from localStorage', e);
     }
-    // Initial starter favorites matching the mockup
-    return [
-      {
-        id: 136315,
-        mediaType: 'tv',
-        title: 'The Bear',
-        titleFa: 'خرس (The Bear)',
-        posterPath: '/sHFlA1d4fFocoxz2a35gQ7O8q0G.jpg',
-        releaseYear: 2022,
-        voteAverage: 8.3,
-        genres: ['کمدی', 'درام'],
-        savedAt: new Date().toISOString(),
-        listType: 'watchlist',
-        numberOfSeasons: 3,
-      },
-      {
-        id: 70523,
-        mediaType: 'tv',
-        title: 'Dark',
-        titleFa: 'تاریک (Dark)',
-        posterPath: '/apbrbWs8M9lyOpJYU5WXrpFbk1Z.jpg',
-        releaseYear: 2017,
-        voteAverage: 8.4,
-        genres: ['معمایی', 'علمی‌تخیلی'],
-        savedAt: new Date().toISOString(),
-        listType: 'watched',
-        numberOfSeasons: 3,
-        userRating: 9,
-      },
-      {
-        id: 157336,
-        mediaType: 'movie',
-        title: 'Interstellar',
-        titleFa: 'میان‌ستاره‌ای',
-        posterPath: '/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg',
-        releaseYear: 2014,
-        voteAverage: 8.4,
-        genres: ['علمی‌تخیلی', 'درام'],
-        savedAt: new Date().toISOString(),
-        listType: 'favorite',
-        runtime: 169,
-        userRating: 10,
-      }
-    ];
+    return [];
   });
 
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>(() => {
@@ -109,20 +66,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e) {
       console.warn('Failed to parse search history', e);
     }
-    return [
-      {
-        id: '1',
-        prompt: 'یه فیلم معمایی تاریک با پایان غیرقابل پیش‌بینی',
-        timestamp: new Date().toISOString(),
-        resultsCount: 12,
-      },
-      {
-        id: '2',
-        prompt: 'سریال کمدی قسمت‌های کوتاه برای آخر شب',
-        timestamp: new Date().toISOString(),
-        resultsCount: 8,
-      }
-    ];
+    return [];
   });
 
   const [settings, setSettings] = useState<UserSettings>(() => {

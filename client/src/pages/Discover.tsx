@@ -68,14 +68,14 @@ export const Discover: React.FC = () => {
     try {
       const previousIds = data.results.map(r => r.media.id);
       const res = await KadrApi.refineRecommendations({
-        originalPrompt: queryPrompt,
+        originalPrompt: refinementInput.trim(),
         refinementPrompt: refinementInput.trim(),
         previousIds,
       });
 
       setData(res);
-      // Update URL with new combined context
-      const newQuery = `${queryPrompt} (${refinementInput.trim()})`;
+      // Update URL with purely the new search prompt to prevent prompt nesting
+      const newQuery = refinementInput.trim();
       setSearchParams({ q: newQuery });
       setRefinementInput('');
     } catch (err: any) {

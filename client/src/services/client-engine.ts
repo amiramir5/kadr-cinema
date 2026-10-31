@@ -141,7 +141,7 @@ export class ClientEngine {
   }
 
   public static async refine(originalPrompt: string, refinementPrompt: string): Promise<RecommendationResponse> {
-    return this.recommend({ prompt: `${originalPrompt} (${refinementPrompt})` });
+    return this.recommend({ prompt: refinementPrompt.trim() });
   }
 
   public static async search(query: string): Promise<{ results: MediaItem[]; total: number }> {
