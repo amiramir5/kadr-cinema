@@ -1,0 +1,13 @@
+<svg width="300" height="450" viewBox="0 0 300 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#12122a"/>
+      <stop offset="100%" stop-color="#1a1a3e"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="450" fill="url(#bgGrad)"/>
+  <rect x="12" y="12" width="276" height="426" rx="16" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+  <text x="150" y="210" text-anchor="middle" font-size="54">🎬</text>
+  <text x="150" y="260" text-anchor="middle" fill="rgba(240,238,255,0.6)" font-size="15" font-family="Vazirmatn,sans-serif" font-weight="500">تصویر موجود نیست</text>
+  <text x="150" y="285" text-anchor="middle" fill="rgba(124,106,247,0.6)" font-size="12" font-family="system-ui,sans-serif">KADR CINEMA</text>
+</svg>
