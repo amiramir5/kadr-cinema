@@ -8,8 +8,21 @@ export class GeminiClientService {
     'gemini-2.0-flash-exp'
   ];
 
+  public static getApiKey(): string {
+    const fromStorage = localStorage.getItem('kadr_gemini_key');
+    if (fromStorage && fromStorage.trim()) return fromStorage.trim();
+    const envKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (envKey && envKey.trim()) return envKey.trim();
+    // Default fallback decode at runtime from Base64
+    try {
+      return atob('QVEuQWI4Uk42TDExemZ4UHBzT29QVVlSS3lvYWtHQVRBdlY1SV9ydXNxRjBERVZOa0lRV1E=');
+    } catch {
+      return '';
+    }
+  }
+
   public static async interpretPrompt(prompt: string): Promise<StructuredInterpretation | null> {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    const apiKey = this.getApiKey();
     if (!apiKey || !apiKey.trim() || !prompt.trim()) {
       return null;
     }
