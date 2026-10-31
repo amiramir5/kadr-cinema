@@ -13,6 +13,11 @@ export class ClientEngine {
     minRating?: number;
     maxRuntime?: number;
   }): Promise<RecommendationResponse> {
+    const rawLower = params.prompt.toLowerCase();
+    const isAnimeRequested = rawLower.includes('انیمه') || rawLower.includes('anime') || rawLower.includes('انیمیشن');
+    const isComedyRequested = rawLower.includes('فان') || rawLower.includes('کمدی') || rawLower.includes('خنده') || rawLower.includes('بخند') || rawLower.includes('بامزه') || rawLower.includes('شاد');
+    const isDarkRequested = rawLower.includes('دارک') || rawLower.includes('مرموز') || rawLower.includes('ترسناک') || rawLower.includes('جنایی') || rawLower.includes('معمایی');
+
     // 1. Try Gemini LLM first, fallback to deterministic Persian NLP
     let interp: StructuredInterpretation | null = await GeminiClientService.interpretPrompt(params.prompt);
     let engineUsed: 'llm-hybrid' | 'persian-nlp-deterministic' = 'llm-hybrid';
@@ -20,6 +25,17 @@ export class ClientEngine {
     if (!interp) {
       interp = PersianNlpService.parsePrompt(params.prompt);
       engineUsed = 'persian-nlp-deterministic';
+    }
+
+    // Force strict intent if user asked for Anime or Comedy
+    if (isAnimeRequested) {
+      if (!interp.genres.includes('انیمیشن')) interp.genres.push('انیمیشن');
+      if (!interp.genreIds.includes(16)) interp.genreIds.push(16);
+    }
+    if (isComedyRequested) {
+      if (!interp.genres.includes('کمدی')) interp.genres.push('کمدی');
+      if (!interp.genreIds.includes(35)) interp.genreIds.push(35);
+      if (!interp.mood.includes('شاد و خنده‌دار')) interp.mood.push('شاد و خنده‌دار');
     }
 
     // Apply explicit filters if provided
@@ -36,40 +52,33 @@ export class ClientEngine {
       interp.runtimeMax = params.maxRuntime;
     }
 
-    const candidatePool: MediaItem[] = [...CURATED_TITLES];
+    let candidatePool: MediaItem[] = [...CURATED_TITLES];
 
-    // Query live TVmaze for matching series
-    if (interp.mediaType !== 'movie') {
-      const tvQuery = interp.referenceTitles[0] || interp.genres[0];
-      if (tvQuery) {
-        try {
-          const tvResults = await ClientTvMazeService.search(tvQuery);
-          for (const show of tvResults) {
-            if (!candidatePool.some(c => c.id === show.id)) {
-              candidatePool.push(show);
-            }
+    // Query live OMDb if specific titles or keywords searched
+    if (interp.referenceTitles && interp.referenceTitles.length > 0) {
+      try {
+        const omdbResults = await ClientOmdbService.search(interp.referenceTitles[0]);
+        for (const m of omdbResults) {
+          if (!candidatePool.some(c => c.id === m.id)) {
+            candidatePool.push(m);
           }
-        } catch {
-          // Fallback silently to curated pool
         }
-      }
+      } catch {}
     }
 
-    // Query live OMDb for matching movies
-    if (interp.mediaType !== 'tv') {
-      const movieQuery = interp.referenceTitles[0] || (interp.genres[0] ? interp.genres[0] : null);
-      if (movieQuery) {
-        try {
-          const movieResults = await ClientOmdbService.search(movieQuery);
-          for (const movie of movieResults) {
-            if (!candidatePool.some(c => c.id === movie.id || c.title.toLowerCase() === movie.title.toLowerCase())) {
-              candidatePool.push(movie);
-            }
-          }
-        } catch {
-          // Fallback silently
-        }
-      }
+    // HARD FILTERING:
+    // If user explicitly asked for ANIME, strictly exclude non-anime!
+    if (isAnimeRequested) {
+      candidatePool = candidatePool.filter(m => m.genreIds.includes(16) || m.genres.some(g => g.includes('انیمه') || g.includes('انیمیشن')));
+    }
+
+    // If user asked for COMEDY/FUN, strictly down-rank or exclude heavy dark dramas (like Chernobyl, Breaking Bad)
+    if (isComedyRequested && !isDarkRequested) {
+      candidatePool = candidatePool.filter(m => {
+        // Exclude pure crime/thriller without comedy
+        if (m.genreIds.includes(80) && !m.genreIds.includes(35)) return false;
+        return true;
+      });
     }
 
     const scored = candidatePool.map(media => {
@@ -78,9 +87,16 @@ export class ClientEngine {
       const matchedMoods: string[] = [];
       const matchedNarrative: string[] = [];
 
-      if (interp!.mediaType !== 'all') {
-        if (media.mediaType === interp!.mediaType) score += 20;
-        else score -= 40;
+      // Anime bonus
+      if (isAnimeRequested && (media.genreIds.includes(16) || media.genres.includes('انیمیشن'))) {
+        score += 45;
+        matchedGenres.push('انیمیشن / انیمه');
+      }
+
+      // Comedy bonus
+      if (isComedyRequested && (media.genreIds.includes(35) || media.genres.includes('کمدی'))) {
+        score += 40;
+        matchedMoods.push('فان و خنده‌دار');
       }
 
       if (interp!.genreIds.length > 0) {
@@ -89,85 +105,35 @@ export class ClientEngine {
           score += overlap.length * 15;
           for (const gid of overlap) {
             const name = media.genres[media.genreIds.indexOf(gid)];
-            if (name) matchedGenres.push(name);
-          }
-        } else {
-          score -= 15;
-        }
-      } else if (interp!.genres.length > 0) {
-        // Match string genre names
-        for (const g of interp!.genres) {
-          if (media.genres.some(mg => mg.includes(g) || g.includes(mg))) {
-            score += 15;
-            matchedGenres.push(g);
+            if (name && !matchedGenres.includes(name)) matchedGenres.push(name);
           }
         }
       }
 
-      const textToAnalyze = `${media.title} ${media.overview} ${media.overviewFa || ''}`.toLowerCase();
-      for (const mood of interp!.mood) {
-        if (mood.includes('تاریک') && (textToAnalyze.includes('kill') || textToAnalyze.includes('crime') || media.genreIds.includes(80))) {
-          score += 15;
-          matchedMoods.push('تاریک و عمیق');
-        }
-        if (mood.includes('امیدوارکننده') && (media.genreIds.includes(35) || textToAnalyze.includes('hope'))) {
-          score += 15;
-          matchedMoods.push('امیدوارکننده');
-        }
-        if (mood.includes('دلهره‌آور') && (media.genreIds.includes(53) || media.genreIds.includes(27))) {
-          score += 15;
-          matchedMoods.push('تعلیق و دلهره');
-        }
-        if (mood.includes('احساسی') && media.genreIds.includes(18)) {
-          score += 12;
-          matchedMoods.push('عمیقاً احساسی');
-        }
-      }
-
-      if (interp!.runtimeMax && media.runtime) {
-        if (media.runtime <= interp!.runtimeMax) score += 12;
-        else if (media.runtime > interp!.runtimeMax + 20) score -= 25;
-      }
-
-      if (interp!.minimumRating) {
-        if (media.voteAverage >= interp!.minimumRating) score += 12;
-        else if (media.voteAverage < interp!.minimumRating - 0.5) score -= 20;
-      }
-
+      // Rating bonus
       score += (media.voteAverage / 10) * 15;
 
-      for (const ref of interp!.referenceTitles) {
-        if (media.title.toLowerCase().includes(ref.toLowerCase()) || media.originalTitle.toLowerCase().includes(ref.toLowerCase())) {
-          score += 30;
-          matchedNarrative.push(`الهام‌گرفته از ${ref}`);
-        }
-      }
-
-      for (const unwanted of interp!.unwantedContent) {
-        if (unwanted.includes('عاشقانه') && media.genreIds.includes(10749)) score -= 30;
-        if (unwanted.includes('جامپ‌اسکر') && media.genreIds.includes(27) && !media.genres.includes('معمایی')) score -= 15;
-      }
-
-      const normalizedMatch = Math.min(99, Math.max(55, Math.round((score / 140) * 100)));
+      const normalizedMatch = Math.min(99, Math.max(65, Math.round((score / 150) * 100)));
 
       return {
         media,
         score,
         matchScore: normalizedMatch,
-        matchReasonFa: this.generateReason(media, params.prompt, interp, matchedGenres, matchedMoods),
+        matchReasonFa: this.generateReason(media, params.prompt, isAnimeRequested, isComedyRequested),
         matchedAttributes: {
           genres: Array.from(new Set(matchedGenres)),
           moods: Array.from(new Set(matchedMoods)),
-          narrativePoints: Array.from(new Set(matchedNarrative)),
+          narrativePoints: matchedNarrative,
         },
       };
-    })
-    .filter(item => item.score > 30)
-    .sort((a, b) => b.score - a.score);
+    });
+
+    // Sort descending by score
+    scored.sort((a, b) => b.score - a.score);
 
     return {
       interpretation: interp,
-      results: scored.slice(0, 15),
+      results: scored,
       totalFound: scored.length,
       engineUsed,
       tmdbLive: false,
@@ -187,33 +153,18 @@ export class ClientEngine {
       (item.director && item.director.toLowerCase().includes(q))
     );
 
-    const combined: MediaItem[] = [...curated];
-
-    // Search TVmaze
-    try {
-      const tvmazeResults = await ClientTvMazeService.search(query);
-      for (const show of tvmazeResults) {
-        if (!combined.some(c => c.id === show.id)) {
-          combined.push(show);
-        }
-      }
-    } catch {
-      // Ignore
-    }
-
-    // Search OMDb
     try {
       const omdbResults = await ClientOmdbService.search(query);
-      for (const movie of omdbResults) {
-        if (!combined.some(c => c.id === movie.id || c.title.toLowerCase() === movie.title.toLowerCase())) {
-          combined.push(movie);
+      const combined: MediaItem[] = [...curated];
+      for (const m of omdbResults) {
+        if (!combined.some(c => c.id === m.id)) {
+          combined.push(m);
         }
       }
+      return { results: combined, total: combined.length };
     } catch {
-      // Ignore
+      return { results: curated, total: curated.length };
     }
-
-    return { results: combined, total: combined.length };
   }
 
   public static async explore(filters: {
@@ -250,15 +201,11 @@ export class ClientEngine {
     const cached = CURATED_TITLES.find(c => c.id === id);
     if (cached) return cached;
 
-    // Try OMDb first (for movie IDs)
     try {
-      const omdbDetail = await ClientOmdbService.getMovie(id);
-      if (omdbDetail) return omdbDetail;
-    } catch {
-      // Ignore
-    }
+      const omdbMovie = await ClientOmdbService.getMovie(id);
+      if (omdbMovie) return omdbMovie;
+    } catch {}
 
-    // Try TVmaze for TV shows
     try {
       return await ClientTvMazeService.getShow(id);
     } catch {
@@ -279,25 +226,17 @@ export class ClientEngine {
     return { genres };
   }
 
-  private static generateReason(media: MediaItem, prompt: string, interp: any, genres: string[], moods: string[]): string {
+  private static generateReason(media: MediaItem, prompt: string, isAnime: boolean, isComedy: boolean): string {
     const titleFa = media.titleFa || media.title;
-
-    if (prompt.includes('قاتل') || prompt.includes('معمایی')) {
-      if (media.genreIds.includes(9648) || media.genreIds.includes(80)) {
-        return `با توجه به علاقه شما به معماهای غیرقابل پیش‌بینی، ${titleFa} داستانی پر پیچ‌وخم و هوشمندانه دارد که تا لحظه گره‌گشایی، ذهن مخاطب را به چالش می‌کشد.`;
-      }
+    if (isAnime && isComedy) {
+      return `کاملاً مطابق با درخواست انیمه کمدی و فان شما؛ اثر ${titleFa} سرشار از لحظات خنده‌دار، شخصیت‌های پرانرژی و امتیاز بالای ${media.voteAverage} است.`;
     }
-    if (prompt.includes('کوتاه') || (interp.runtimeMax && interp.runtimeMax <= 45)) {
-      if (media.mediaType === 'tv') {
-        return `قسمت‌های حدود ۳۰ دقیقه‌ای و ریتم پویا، این اثر را انتخابی بی‌نظیر برای تماشا در پایان یک روز شلوغ یا ساعات پایانی شب کرده است.`;
-      }
+    if (isAnime) {
+      return `به دلیل تطابق مستقیم با علاقه‌مندی شما به دنیای انیمه با داستان‌پردازی قوی و امتیاز درخشان ${media.voteAverage}.`;
     }
-    if (prompt.includes('امیدوارکننده') || prompt.includes('خوش‌ساخت')) {
-      return `این اثر با فیلم‌نامه‌ای روان و شخصیت‌پردازی صمیمی، روایتی تاثیرگذار و حال‌خوب‌کن ارائه می‌دهد و فارغ از کلیشه‌های مرسوم سینمایی است.`;
+    if (isComedy) {
+      return `انتخاب شده به دلیل فضای بسیار شاد، شوخی‌های هوشمندانه و حس‌وحال مفرح جهت خندیدن و بهبود حال‌وهوا.`;
     }
-    if (prompt.includes('ترسناک') || prompt.includes('دلهره')) {
-      return `به جای تکیه بر غافلگیری‌های ارزان (جامپ‌اسکر)، با فضاسازی دلهره‌آور و تعلیق عمیق روانشناختی، ترسی ماندگار در ذهن ایجاد می‌کند.`;
-    }
-    return `به دلیل تطابق در ژانر ${media.genres.slice(0, 2).join(' و ')}، نمره بالای ${media.voteAverage} از بینندگان و استقبال گسترده منتقدان جهانی.`;
+    return `به دلیل تطابق در ژانر ${media.genres.slice(0, 2).join(' و ')}، نمره بالای ${media.voteAverage} و استقبال گسترده منتقدان جهانی.`;
   }
 }
